@@ -8,11 +8,13 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Array;
 
 public class SnakeGame extends ApplicationAdapter {
 
+	private ShapeRenderer shapeRenderer;
 	private SpriteBatch batch;
 	private Texture snakeHead;
 	private Texture apple;
@@ -22,8 +24,11 @@ public class SnakeGame extends ApplicationAdapter {
 	private static final int SNAKE_MOVEMENT = 32; // 贪吃蛇本身大小为32*32，每次移动一格
 	private int snakeX = 0, snakeY = 0;
 	private boolean appleAvailable = false;
+	private boolean directionSet = false;
+	private boolean hasHit = false;
 	private int appleX, appleY;
 	private float delta = 0;
+	private static final int GRID_CELL = 32;
 
 	private Array<BodyPart> bodyParts = new Array<BodyPart>();
 
@@ -33,26 +38,36 @@ public class SnakeGame extends ApplicationAdapter {
 		snakeHead = new Texture(Gdx.files.internal("snakehead.png"));
 		apple = new Texture(Gdx.files.internal("apple.png"));
 		snakeBody = new Texture(Gdx.files.internal("snakeBody.png"));
+
+		shapeRenderer = new ShapeRenderer();
 	}
 
 	@Override
 	public void render() {
-		delta = Gdx.graphics.getDeltaTime();
 
 		queryInput();
-		timer -= delta;
-		if (timer <= 0) {
-			timer = MOVE_TIME;
-			moveSnake();
-			checkForOutOfBounds();
-			updateBodyPartsPosition();
-		}
+		updateSnake(Gdx.graphics.getDeltaTime());
 
 		clearScreen();
 		checkAppleCollision();
 		checkAndPlaceApple();
-		
+
 		draw();
+		drawGrid();
+	}
+	
+	private void updateSnake(float delta) {
+		if (!hasHit) {
+			timer -= delta;
+			if (timer <= 0) {
+			timer = MOVE_TIME;
+			moveSnake();
+			checkForOutOfBounds();
+			updateBodyPartsPosition();
+			checkSnakeBodyCollision();
+			directionSet = false;
+			}
+		}
 	}
 
 	@Override
@@ -66,6 +81,7 @@ public class SnakeGame extends ApplicationAdapter {
 		batch.dispose();
 		snakeHead.dispose();
 		apple.dispose();
+		shapeRenderer.dispose();
 	}
 
 	/**
@@ -96,9 +112,30 @@ public class SnakeGame extends ApplicationAdapter {
 		batch.end();
 	}
 
+	private void drawGrid() {
+		shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+		for (int x = 0; x < Gdx.graphics.getWidth(); x += GRID_CELL) {
+			for (int y = 0; y < Gdx.graphics.getHeight(); y += GRID_CELL) {
+				// 画出一个正方形
+				shapeRenderer.rect(x, y, GRID_CELL, GRID_CELL);
+			}
+		}
+		shapeRenderer.end();
+	}
+
 	private void clearScreen() {
 		Gdx.gl.glClearColor(Color.BLACK.r, Color.BLACK.g, Color.BLACK.b, Color.BLACK.a);
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+	}
+
+	/**
+	 * 判断贪吃蛇的投是否和身体接触，接触则游戏结束
+	 */
+	private void checkSnakeBodyCollision() {
+		for (BodyPart bodyPart : bodyParts) {
+			if (bodyPart.x == snakeX && bodyPart.y == snakeY)
+				hasHit = true;
+		}
 	}
 
 	private void checkAndPlaceApple() {
@@ -171,7 +208,37 @@ public class SnakeGame extends ApplicationAdapter {
 			bodyParts.add(bodyPart);
 		}
 	}
-	
+
+	private void updateIfNotOppositeDirection(int newSnakeDirection, int oppositeDirection) {
+		// 当贪吃蛇没有身体可以回头，其余时候只有方向不同才能转向
+		if (snakeDirection != oppositeDirection || bodyParts.size == 0)
+			snakeDirection = newSnakeDirection;
+	}
+
+	private void updateDirection(int newSnakeDirection) {
+		if (!directionSet && snakeDirection != newSnakeDirection) {
+			directionSet = true;
+			switch (newSnakeDirection) {
+			case LEFT: {
+				updateIfNotOppositeDirection(newSnakeDirection, RIGHT);
+			}
+				break;
+			case RIGHT: {
+				updateIfNotOppositeDirection(newSnakeDirection, LEFT);
+			}
+				break;
+			case UP: {
+				updateIfNotOppositeDirection(newSnakeDirection, DOWN);
+			}
+				break;
+			case DOWN: {
+				updateIfNotOppositeDirection(newSnakeDirection, UP);
+			}
+				break;
+			}
+		}
+	}
+
 	private void queryInput() {
 
 		boolean lPressed = Gdx.input.isKeyPressed(Input.Keys.LEFT);
@@ -179,29 +246,26 @@ public class SnakeGame extends ApplicationAdapter {
 		boolean uPressed = Gdx.input.isKeyPressed(Input.Keys.UP);
 		boolean dPressed = Gdx.input.isKeyPressed(Input.Keys.DOWN);
 
-		if (lPressed)
-			snakeDirection = LEFT;
-		if (rPressed)
-			snakeDirection = RIGHT;
-		if (uPressed)
-			snakeDirection = UP;
-		if (dPressed)
-			snakeDirection = DOWN;
+		if (lPressed) updateDirection(LEFT);
+		if (rPressed) updateDirection(RIGHT);
+		if (uPressed) updateDirection(UP);
+		if (dPressed) updateDirection(DOWN);
+
 	}
 
 	public class BodyPart {
 		private int x, y;
 		private Texture texture;
-		
+
 		public BodyPart(Texture texture) {
 			this.texture = texture;
 		}
-		
+
 		public void updateBodyPosition(int x, int y) {
 			this.x = x;
 			this.y = y;
 		}
-		
+
 		public void draw(Batch batch) {
 			// 当贪吃蛇移动开头之后，才绘制身体
 			if (!(x == snakeX && y == snakeY)) {
