@@ -7,10 +7,13 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.viewport.FitViewport;
 
 public class SnakeGame extends ApplicationAdapter {
 
@@ -25,12 +28,19 @@ public class SnakeGame extends ApplicationAdapter {
 	private int snakeX = 0, snakeY = 0;
 	private boolean appleAvailable = false;
 	private boolean directionSet = false;
-	private boolean hasHit = false;
 	private int appleX, appleY;
-	private float delta = 0;
 	private static final int GRID_CELL = 32;
 
 	private Array<BodyPart> bodyParts = new Array<BodyPart>();
+	private STATE state = STATE.PLAYING;
+	private static final String GAME_OVER_TEXT = "Game Over... Tap space to restart!";
+	private GlyphLayout layout;
+	
+	private BitmapFont bitmapFont;
+	private FitViewport viewport;
+	
+	private static final float WORLD_WIDTH = 640f;
+	private static final float WORLD_HEIGHT = 480f;
 
 	@Override
 	public void create() {
@@ -40,40 +50,71 @@ public class SnakeGame extends ApplicationAdapter {
 		snakeBody = new Texture(Gdx.files.internal("snakeBody.png"));
 
 		shapeRenderer = new ShapeRenderer();
+		bitmapFont = new BitmapFont();
+		
+		layout = new GlyphLayout();
+		
+		viewport = new FitViewport(WORLD_WIDTH, WORLD_HEIGHT);
+		viewport.apply(true);
 	}
 
+	private void checkForRestart() {
+		if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) doRestart();
+	}
+	
+	private void doRestart() {
+		state = STATE.PLAYING;
+		bodyParts.clear();
+		snakeDirection = RIGHT;
+		directionSet = false;
+		timer = MOVE_TIME;
+		snakeX = 0;
+		snakeY = 0;
+		snakeXBeforeUpdate = 0;
+		snakeYBeforeUpdate = 0;
+		appleAvailable = false;
+	}
+	
 	@Override
 	public void render() {
 
-		queryInput();
-		updateSnake(Gdx.graphics.getDeltaTime());
-
 		clearScreen();
-		checkAppleCollision();
-		checkAndPlaceApple();
+		
+		switch(state) {
+		case PLAYING: {
+			queryInput();
+			updateSnake(Gdx.graphics.getDeltaTime());
+			checkAppleCollision();
+			checkAndPlaceApple();
+			drawGrid();
+		}
+		break;
+		case GAME_OVER: {
+			checkForRestart();
+		}
+		break;
+		}
+
+		
 
 		draw();
-		drawGrid();
 	}
 	
 	private void updateSnake(float delta) {
-		if (!hasHit) {
-			timer -= delta;
-			if (timer <= 0) {
+		timer -= delta;
+		if (timer <= 0) {
 			timer = MOVE_TIME;
 			moveSnake();
 			checkForOutOfBounds();
 			updateBodyPartsPosition();
 			checkSnakeBodyCollision();
 			directionSet = false;
-			}
 		}
 	}
 
 	@Override
 	public void resize(int width, int height) {
-		// TODO Auto-generated method stub
-		super.resize(width, height);
+		viewport.update(width, height);
 	}
 
 	@Override
@@ -81,7 +122,9 @@ public class SnakeGame extends ApplicationAdapter {
 		batch.dispose();
 		snakeHead.dispose();
 		apple.dispose();
+		snakeBody.dispose();
 		shapeRenderer.dispose();
+		bitmapFont.dispose();
 	}
 
 	/**
@@ -100,7 +143,7 @@ public class SnakeGame extends ApplicationAdapter {
 	}
 
 	private void draw() {
-
+		batch.setProjectionMatrix(viewport.getCamera().combined);
 		batch.begin();
 		batch.draw(snakeHead, snakeX, snakeY);
 		for (BodyPart bodyPart : bodyParts) {
@@ -109,20 +152,27 @@ public class SnakeGame extends ApplicationAdapter {
 		if (appleAvailable) {
 			batch.draw(apple, appleX, appleY);
 		}
+		if (state == STATE.GAME_OVER) {
+			layout.setText(bitmapFont, GAME_OVER_TEXT);
+			bitmapFont.draw(batch, GAME_OVER_TEXT, (viewport.getWorldWidth() - layout.width) / 2, 
+					(viewport.getWorldHeight() - layout.height) / 2);
+		}
 		batch.end();
 	}
 
 	private void drawGrid() {
+		// ShaperRender设置映射矩阵
+		shapeRenderer.setProjectionMatrix(viewport.getCamera().combined);
 		shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-		for (int x = 0; x < Gdx.graphics.getWidth(); x += GRID_CELL) {
-			for (int y = 0; y < Gdx.graphics.getHeight(); y += GRID_CELL) {
+		for (int x = 0; x < viewport.getWorldWidth(); x += GRID_CELL) {
+			for (int y = 0; y < viewport.getWorldHeight(); y += GRID_CELL) {
 				// 画出一个正方形
 				shapeRenderer.rect(x, y, GRID_CELL, GRID_CELL);
 			}
 		}
 		shapeRenderer.end();
 	}
-
+	
 	private void clearScreen() {
 		Gdx.gl.glClearColor(Color.BLACK.r, Color.BLACK.g, Color.BLACK.b, Color.BLACK.a);
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
@@ -134,7 +184,7 @@ public class SnakeGame extends ApplicationAdapter {
 	private void checkSnakeBodyCollision() {
 		for (BodyPart bodyPart : bodyParts) {
 			if (bodyPart.x == snakeX && bodyPart.y == snakeY)
-				hasHit = true;
+				state = STATE.GAME_OVER;
 		}
 	}
 
@@ -142,8 +192,8 @@ public class SnakeGame extends ApplicationAdapter {
 		// 其实苹果只有一个，通过appleAvailable控制苹果的位置，并改变位置
 		if (!appleAvailable) {
 			do {
-				appleX = MathUtils.random(Gdx.graphics.getWidth() / SNAKE_MOVEMENT - 1) * SNAKE_MOVEMENT;
-				appleY = MathUtils.random(Gdx.graphics.getHeight() / SNAKE_MOVEMENT - 1) * SNAKE_MOVEMENT;
+				appleX = MathUtils.random((int)viewport.getWorldWidth() / SNAKE_MOVEMENT - 1) * SNAKE_MOVEMENT;
+				appleY = MathUtils.random((int)viewport.getWorldHeight() / SNAKE_MOVEMENT - 1) * SNAKE_MOVEMENT;
 				appleAvailable = true;
 			} while (appleX == snakeX && appleY == snakeY); // 如果苹果的位置和贪吃蛇的位置重复，那么需要重新生成一个苹果
 		}
@@ -253,6 +303,10 @@ public class SnakeGame extends ApplicationAdapter {
 
 	}
 
+	private enum STATE {
+		PLAYING, GAME_OVER
+	}
+	
 	public class BodyPart {
 		private int x, y;
 		private Texture texture;
