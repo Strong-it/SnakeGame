@@ -1,2 +1,3 @@
 # SnakeGame
-使用Libgdx练习贪吃蛇的游戏
+浣跨敤Libgdx缁冧範鐨勮椽鍚冭泧娓告垙锛岄檮鍥惧涓嬶細
+![](https://github.com/Strong-it/SnakeGame/blob/master/core/assets/tan.PNG)
